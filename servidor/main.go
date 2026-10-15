@@ -1,20 +1,33 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 )
 
 type Trecho struct {
-	Origem   string
-	Destino  string
-	Assentos int
+	Origem   string `json:"origem"`
+	Destino  string `json:"destino"`
+	Assentos int    `json:"assentos"`
 }
 
 type Carona struct {
-	ID        string
-	Motorista string
-	Trechos   []Trecho
+	ID        string   `json:"id"`
+	Motorista string   `json:"motorista"`
+	Trechos   []Trecho `json:"trechos"`
+}
+
+var caronas = []Carona{
+	{
+		ID:        "VJ-1",
+		Motorista: "Rick",
+		Trechos: []Trecho{
+			{Origem: "Salvador", Destino: "Feira de Santana", Assentos: 3},
+			{Origem: "Feira de Santana", Destino: "Vitoria da Conquista", Assentos: 3},
+		},
+	},
 }
 
 func validarTrecho(t Trecho) error {
@@ -27,23 +40,27 @@ func validarTrecho(t Trecho) error {
 	return nil
 }
 
-func main() {
-	c := Carona{
-		ID:        "VJ-1",
-		Motorista: "Rick",
-		Trechos: []Trecho{
-			{Origem: "Salvador", Destino: "Feira de Santana", Assentos: 3},
-			{Origem: "Feira de Santana", Destino: "Vitoria da Conquista", Assentos: 3},
-		},
-	}
-	fmt.Printf("%+v\n", c)
-	for _, t := range c.Trechos {
-		err := validarTrecho(t)
-		if err != nil {
-			fmt.Println("Trecho inválido:", err)
-		} else {
-			fmt.Println("Trecho ok:", t.Origem, "->", t.Destino)
-		}
-	}
+func listarCaronas(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json") //<- O que vai aqui dentro é Json.
+	json.NewEncoder(w).Encode(caronas)                 //traduz para json e coloca em w.
+}
 
+func main() {
+	for _, c := range caronas {
+		fmt.Printf("%+v\n", c)
+		for _, t := range c.Trechos {
+			if err := validarTrecho(t); err != nil {
+				fmt.Println("Trecho inválido:", err)
+			}
+		}
+
+		http.HandleFunc("GET /caronas", listarCaronas) //método e caminho, chamando a função depois que chega um pedido
+
+		fmt.Println("Servidor ouvindo na porta 8080")
+		err := http.ListenAndServe(":8080", nil)
+		if err != nil {
+			fmt.Println("Erro ao iniciar o servidor:", err)
+		}
+
+	}
 }
