@@ -32,4 +32,9 @@ CLAUDE.local.md
 # Documentação (fora do repositório por enquanto)
 docs/
 
+# Estado gravado pelo servidor em tempo de execução
+caronas.json
+estudos/
+
+
 
