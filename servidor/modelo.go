@@ -140,6 +140,19 @@ func empresaDa(idCarona string) string {
 	return empresa
 }
 
+// copiar faz uma cópia COMPLETA da carona (inclusive a lista de trechos), para
+// poder lê-la depois de soltar a trava sem disputar memória com quem reserva.
+// Chamar com a trava pega.
+func copiar(c Carona) Carona {
+	copia := c
+	copia.Trechos = make([]Trecho, len(c.Trechos))
+	for i, t := range c.Trechos {
+		t.Passageiros = append([]string{}, t.Passageiros...)
+		copia.Trechos[i] = t
+	}
+	return copia
+}
+
 // acharCarona devolve um ponteiro para a carona (para poder alterá-la) ou nil.
 // Chamar com a trava pega.
 func acharCarona(id string) *Carona {

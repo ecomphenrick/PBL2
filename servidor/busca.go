@@ -23,7 +23,7 @@ func buscar(origem, destino, data string) ([]protocolo.Opcao, []string) {
 	todas := []Carona{}
 	for _, c := range estado.Caronas {
 		if c.Data == data {
-			todas = append(todas, c)
+			todas = append(todas, copiar(c))
 		}
 	}
 	trava.Unlock()

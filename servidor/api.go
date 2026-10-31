@@ -46,7 +46,7 @@ func listarCaronas(w http.ResponseWriter, r *http.Request) {
 	lista := []Carona{}
 	for _, c := range estado.Caronas {
 		if data == "" || c.Data == data {
-			lista = append(lista, c)
+			lista = append(lista, copiar(c))
 		}
 	}
 	trava.Unlock()
