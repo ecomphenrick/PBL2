@@ -30,7 +30,9 @@ CLAUDE.md
 CLAUDE.local.md
 
 # Documentação (fora do repositório por enquanto)
-docs/
+docs/*
+!docs/api/
+!docs/diagramas/
 
 # Estado gravado pelo servidor em tempo de execução
 caronas.json
