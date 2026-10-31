@@ -1,0 +1,48 @@
+# Três empresas no MESMO computador (para desenvolver e testar).
+# No laboratório, cada empresa roda em uma máquina com "docker run" (ver README).
+#
+#   docker compose up -d --build          sobe as 3 empresas
+#   docker compose logs -f                acompanha os logs
+#   docker compose stop empresa-b         derruba a empresa B (falha)
+#   docker compose start empresa-b        religa a empresa B (recuperação)
+#   docker compose down -v                apaga tudo, inclusive os dados
+#
+# Portas no computador: API REST 8081/8082/8083; clientes TCP 9001/9002/9003.
+
+x-empresa: &empresa
+  build: .
+  image: vaijunto
+  restart: "no"
+
+services:
+  empresa-a:
+    <<: *empresa
+    container_name: empresa-a
+    environment:
+      EMPRESA: A
+      PARES: B=http://empresa-b:8080,C=http://empresa-c:8080
+    ports: ["8081:8080", "9001:9000"]
+    volumes: [dados-a:/dados]
+
+  empresa-b:
+    <<: *empresa
+    container_name: empresa-b
+    environment:
+      EMPRESA: B
+      PARES: A=http://empresa-a:8080,C=http://empresa-c:8080
+    ports: ["8082:8080", "9002:9000"]
+    volumes: [dados-b:/dados]
+
+  empresa-c:
+    <<: *empresa
+    container_name: empresa-c
+    environment:
+      EMPRESA: C
+      PARES: A=http://empresa-a:8080,B=http://empresa-b:8080
+    ports: ["8083:8080", "9003:9000"]
+    volumes: [dados-c:/dados]
+
+volumes:
+  dados-a:
+  dados-b:
+  dados-c:
