@@ -1,117 +1,75 @@
 package main
 
+// main.go: liga o servidor de UMA empresa.
+//
+// Configuração por variáveis de ambiente (assim a mesma imagem Docker serve
+// para qualquer empresa e qualquer máquina do laboratório):
+//
+//   EMPRESA          letra da empresa (A, B, C...)              padrão: A
+//   PORTA_API        porta HTTP da API REST entre servidores     padrão: 8080
+//   PORTA_CLIENTES   porta TCP dos clientes motorista/passageiro padrão: 9000
+//   PARES            outras empresas: "B=http://IP:8080,C=http://IP:8080"
+//   DADOS            arquivo onde o estado é gravado             padrão: estado-<EMPRESA>.json
+//   PRAZO_PROVISORIO quanto o dono espera antes de perguntar     padrão: 30s
+//   VALVULA          quanto o dono espera antes de liberar sozinho padrão: 5m
+
 import (
-	"encoding/json"
-	"errors"
-	"fmt"
+	"log"
 	"net/http"
 	"os"
-	"sync"
+	"strings"
+	"time"
 )
 
-type Trecho struct {
-	Origem   string `json:"origem"`
-	Destino  string `json:"destino"`
-	Assentos int    `json:"assentos"`
-}
-
-type Carona struct {
-	ID        string   `json:"id"`
-	Motorista string   `json:"motorista"`
-	Trechos   []Trecho `json:"trechos"`
-}
-
-var caronas = []Carona{
-	{
-		ID:        "VJ-1",
-		Motorista: "Rick",
-		Trechos: []Trecho{
-			{Origem: "Salvador", Destino: "Feira de Santana", Assentos: 3},
-			{Origem: "Feira de Santana", Destino: "Vitoria da Conquista", Assentos: 3},
-		},
-	},
-}
-
-var trava sync.Mutex
-
-const arquivo = "caronas.json"
-
-func validarTrecho(t Trecho) error {
-	if t.Origem == t.Destino {
-		return errors.New("Origem e destinos iguais")
+// variavel lê uma variável de ambiente ou devolve o padrão.
+func variavel(nome, padrao string) string {
+	if v := os.Getenv(nome); v != "" {
+		return v
 	}
-	if t.Assentos <= 0 {
-		return errors.New("Trecho sem assentos")
-	}
-	return nil
+	return padrao
 }
 
-// salvar grava a lista de caronas no arquivo (o armazenamento desta empresa).
-// Deve ser chamada com a trava já pega.
-func salvar() error {
-	dados, err := json.MarshalIndent(caronas, "", "  ")
-	if err != nil {
-		return err
+// duracao lê uma variável como tempo ("30s", "5m") ou devolve o padrão.
+func duracao(nome string, padrao time.Duration) time.Duration {
+	if d, err := time.ParseDuration(os.Getenv(nome)); err == nil {
+		return d
 	}
-	return os.WriteFile(arquivo, dados, 0644)
+	return padrao
 }
 
-// carregar lê o arquivo ao iniciar o servidor. Se ele ainda não existe
-// (primeira execução), grava as caronas iniciais para criá-lo.
-func carregar() error {
-	dados, err := os.ReadFile(arquivo)
-	if errors.Is(err, os.ErrNotExist) {
-		return salvar()
-	}
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(dados, &caronas)
-}
-
-func reservar(idCarona string, trecho int) error {
-	trava.Lock()
-	defer trava.Unlock()
-
-	for i := range caronas {
-		if caronas[i].ID != idCarona {
-			continue //não é essa carona que eu quero, passe para a proxima
+// lerPares transforma "B=http://x:8080,C=http://y:8080" no mapa pares.
+func lerPares(texto string) {
+	for _, item := range strings.Split(texto, ",") {
+		empresa, endereco, ok := strings.Cut(strings.TrimSpace(item), "=")
+		if ok && empresa != "" {
+			pares[empresa] = strings.TrimRight(endereco, "/")
 		}
-		if trecho < 0 || trecho >= len(caronas[i].Trechos) { //trecho menor q zero ou maior q a qtd = inexistente
-			return errors.New("trecho inexistente")
-		}
-		if caronas[i].Trechos[trecho].Assentos <= 0 {
-			return errors.New("sem assentos livres")
-		}
-		caronas[i].Trechos[trecho].Assentos-- //diminui um assento.
-		if err := salvar(); err != nil {
-			caronas[i].Trechos[trecho].Assentos++ //não gravou: desfaz na memória
-			return err
-		}
-		return nil
 	}
-	return errors.New("carona não encontrada")
-}
-
-func listarCaronas(w http.ResponseWriter, r *http.Request) {
-	trava.Lock()
-	defer trava.Unlock()
-	w.Header().Set("Content-Type", "application/json") //<- O que vai aqui dentro é Json.
-	json.NewEncoder(w).Encode(caronas)                 //traduz para json e coloca em w.
 }
 
 func main() {
-	if err := carregar(); err != nil {
-		fmt.Println("Erro ao carregar as caronas:", err)
-		return
-	}
-	fmt.Println("Caronas carregadas:", len(caronas))
+	empresa := variavel("EMPRESA", "A")
+	log.SetPrefix("[empresa " + empresa + "] ")
+	arquivo = variavel("DADOS", "estado-"+empresa+".json")
+	prazoProvisorio = duracao("PRAZO_PROVISORIO", prazoProvisorio)
+	valvula = duracao("VALVULA", valvula)
+	lerPares(variavel("PARES", ""))
+	delete(pares, empresa) // eu não sou meu próprio par
 
-	http.HandleFunc("GET /caronas", listarCaronas) //método e caminho, chamando a função depois que chega um pedido
-
-	fmt.Println("Servidor ouvindo na porta 8080")
-	err := http.ListenAndServe(":8080", nil)
-	if err != nil {
-		fmt.Println("Erro ao iniciar o servidor:", err)
+	if err := carregar(empresa); err != nil {
+		log.Fatalf("erro ao carregar %s: %v", arquivo, err)
 	}
+	log.Printf("estado carregado de %s: %d carona(s), %d transacao(oes) coordenada(s), %d participacao(oes)",
+		arquivo, len(estado.Caronas), len(estado.Transacoes), len(estado.Participacoes))
+	log.Printf("pares: %v | provisorio %s | valvula %s | timeout %s", pares, prazoProvisorio, valvula, timeoutRede)
+
+	recuperar()            // decisão 9: arruma o que ficou pela metade antes de atender
+	go vigiarProvisorios() // decisão 8 (lado dono)
+	go reenviarDecisoes()  // decisão 9 (lado coordenador)
+	go ouvirClientes(variavel("PORTA_CLIENTES", "9000"))
+
+	registrarRotas()
+	porta := variavel("PORTA_API", "8080")
+	log.Printf("API REST na porta %s", porta)
+	log.Fatal(http.ListenAndServe(":"+porta, nil))
 }
