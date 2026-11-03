@@ -10,7 +10,6 @@ func carona(id string, assentos int, rota ...string) Carona {
 	return c
 }
 
-// Itinerário que passa pelas 3 empresas é encontrado.
 func TestBuscaTresEmpresas(t *testing.T) {
 	caronas := []Carona{
 		carona("A-1", 2, "Salvador", "Feira"),
@@ -23,7 +22,6 @@ func TestBuscaTresEmpresas(t *testing.T) {
 	}
 }
 
-// Perna lotada não aparece; direta vem antes de conexão.
 func TestBuscaPulaLotadaEOrdena(t *testing.T) {
 	caronas := []Carona{
 		carona("A-1", 0, "Salvador", "Ilheus"), // lotada

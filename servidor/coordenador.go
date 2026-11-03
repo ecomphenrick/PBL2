@@ -1,9 +1,8 @@
 package main
 
-// coordenador.go: o lado de QUEM COORDENA o itinerário (a empresa do passageiro).
-// Decisão 6: 2PC. Fase 1 pergunta a todas as donas; fase 2 confirma todas ou
-// cancela todas. Decisão 9: a decisão é gravada ANTES do primeiro "confirmar"
-// (certidão antes do anúncio).
+// Lado do coordenador (a empresa do passageiro). Commit em duas fases: a
+// decisão é gravada antes de qualquer "confirmar" ser enviado, para que ela
+// possa ser reenviada se o coordenador cair no meio do anúncio.
 
 import (
 	"errors"
@@ -15,15 +14,13 @@ import (
 	"github.com/ecomphenrick/PBL2/protocolo"
 )
 
-// reservarItinerario reserva TODOS os itens ou NENHUM.
-// Devolve o ID da transação e nil se confirmou, ou um erro com o motivo.
+// reservarItinerario reserva todos os itens ou nenhum.
 func reservarItinerario(passageiro string, itens []protocolo.Item) (string, error) {
 	partes, err := agruparPorEmpresa(itens)
 	if err != nil {
 		return "", err
 	}
 
-	// 1) Registra a transação como "perguntando" e grava (antes de qualquer pedido).
 	trava.Lock()
 	estado.ProxTransacao++
 	tx := &Transacao{
@@ -41,7 +38,7 @@ func reservarItinerario(passageiro string, itens []protocolo.Item) (string, erro
 	}
 	log.Printf("[coord] %s: FASE 1, perguntando a %d empresa(s)", tx.ID, len(partes))
 
-	// 2) FASE 1: pergunta a todas as donas AO MESMO TEMPO (uma goroutine por empresa).
+	// Fase 1: uma goroutine por empresa.
 	votos := make([]bool, len(partes))
 	motivos := make([]string, len(partes))
 	var espera sync.WaitGroup
@@ -53,9 +50,8 @@ func reservarItinerario(passageiro string, itens []protocolo.Item) (string, erro
 		}()
 	}
 	espera.Wait()
-	talvezCair("apos-fase1") // demonstração: cair sem decisão gravada
+	talvezCair("apos-fase1")
 
-	// 3) Decide e GRAVA a decisão (a certidão).
 	trava.Lock()
 	motivo := ""
 	for i, parte := range tx.Partes {
@@ -66,8 +62,8 @@ func reservarItinerario(passageiro string, itens []protocolo.Item) (string, erro
 			motivo = motivos[i]
 		}
 	}
-	// Se alguém perguntou "e aí?" enquanto esperávamos, a transação já foi
-	// cancelada (ajuste da decisão 8). Nesse caso NÃO vira confirmar.
+	// Se um dono perguntou a decisão durante a fase 1, consultarDecisao já
+	// cancelou a transação, e ela não pode mais virar confirmar.
 	if tx.Estado == perguntando {
 		if motivo == "" {
 			tx.Estado = confirmar
@@ -77,16 +73,15 @@ func reservarItinerario(passageiro string, itens []protocolo.Item) (string, erro
 		}
 	}
 	if err := salvar(); err != nil {
-		// Sem certidão gravada não pode confirmar ninguém.
 		tx.Estado = cancelar
 		tx.Motivo = "falha ao gravar a decisao"
 	}
 	decisao, motivoFinal := tx.Estado, tx.Motivo
 	trava.Unlock()
 	log.Printf("[coord] %s: decisao = %s %s", tx.ID, decisao, motivoFinal)
-	talvezCair("apos-decisao") // demonstração: cair com a decisão gravada, sem avisar ninguém
+	talvezCair("apos-decisao")
 
-	// 4) FASE 2: avisa todas. Quem estiver fora do ar recebe depois (reenvio periódico).
+	// Fase 2. Quem estiver fora do ar recebe pelo reenvio periódico.
 	anunciar(tx)
 
 	if decisao != confirmar {
@@ -95,7 +90,6 @@ func reservarItinerario(passageiro string, itens []protocolo.Item) (string, erro
 	return tx.ID, nil
 }
 
-// agruparPorEmpresa separa os itens pela empresa dona de cada carona.
 func agruparPorEmpresa(itens []protocolo.Item) ([]*Parte, error) {
 	if len(itens) == 0 {
 		return nil, errors.New("nenhum trecho escolhido")
@@ -118,8 +112,8 @@ func agruparPorEmpresa(itens []protocolo.Item) ([]*Parte, error) {
 	return partes, nil
 }
 
-// anunciar manda a decisão a todas as partes que ainda não foram avisadas.
-// Pode ser chamada várias vezes (o dono trata pedido repetido).
+// anunciar envia a decisão às partes ainda não avisadas. Pode ser chamada
+// mais de uma vez, porque o dono trata pedidos repetidos.
 func anunciar(tx *Transacao) {
 	trava.Lock()
 	decisao := tx.Estado
@@ -157,19 +151,18 @@ func anunciar(tx *Transacao) {
 	trava.Unlock()
 }
 
-// consultarDecisao responde ao DONO que pergunta "o que foi decidido em tx?".
+// consultarDecisao atende o dono que pergunta o resultado de uma transação.
 func consultarDecisao(id string) string {
 	trava.Lock()
 	defer trava.Unlock()
 
 	tx, existe := estado.Transacoes[id]
 	if !existe {
-		return cancelar // sem certidão, não houve casamento
+		return cancelar // sem registro, presume-se cancelada
 	}
 	if tx.Estado == perguntando {
-		// Ajuste da decisão 8: o dono cansou de esperar e a decisão ainda não
-		// saiu. Cancela AGORA, para ele nunca liberar um assento que depois
-		// seria confirmado (itinerário pela metade).
+		// Ainda sem decisão: cancela agora. Se respondesse "não sei", o dono
+		// poderia liberar um assento que logo depois seria confirmado.
 		tx.Estado = cancelar
 		tx.Motivo = "uma empresa perguntou antes da decisao sair"
 		salvar()

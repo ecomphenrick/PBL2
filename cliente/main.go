@@ -1,5 +1,5 @@
 // Cliente do VaiJunto (motorista e passageiro), adaptado do Problema 1.
-// Fala SÓ com o servidor da própria empresa, por TCP.
+// Conecta-se apenas ao servidor da própria empresa, por TCP.
 //
 // Endereço do servidor: variável VAIJUNTO_SERVIDOR (padrão localhost:9000).
 package main

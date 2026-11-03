@@ -1,7 +1,6 @@
 package main
 
-// Testes da lógica do dono e do coordenador, sem rede.
-// Rodar com: go test ./servidor -v
+// go test ./servidor -v
 
 import (
 	"path/filepath"
@@ -12,8 +11,7 @@ import (
 	"github.com/ecomphenrick/PBL2/protocolo"
 )
 
-// prepararTeste cria uma empresa "A" vazia com uma carona A-1 (Salvador -> Feira)
-// de 'assentos' lugares, gravando num diretório temporário.
+// prepararTeste cria a empresa A com a carona A-1 (Salvador -> Feira).
 func prepararTeste(t *testing.T, assentos int) {
 	t.Helper()
 	arquivo = filepath.Join(t.TempDir(), "estado.json")
@@ -29,7 +27,7 @@ func prepararTeste(t *testing.T, assentos int) {
 
 var umTrecho = []protocolo.Item{{Carona: "A-1", De: 0, Ate: 1}}
 
-// Invariante 1: 100 pedidos SIMULTÂNEOS pelo último assento -> exatamente 1 "sim".
+// 100 pedidos simultâneos pelo último assento: exatamente um "sim".
 func TestUltimoAssentoSoUmGanha(t *testing.T) {
 	prepararTeste(t, 1)
 	var (
@@ -58,7 +56,6 @@ func TestUltimoAssentoSoUmGanha(t *testing.T) {
 	}
 }
 
-// Pedido repetido não separa assento duas vezes (idempotência).
 func TestPrepararRepetido(t *testing.T) {
 	prepararTeste(t, 2)
 	preparar("B-T1", "B", "p", umTrecho)
@@ -70,7 +67,6 @@ func TestPrepararRepetido(t *testing.T) {
 	}
 }
 
-// "Cancelar" que chega ANTES do "preparar" faz o preparar atrasado ser recusado.
 func TestCancelarAntesDoPreparar(t *testing.T) {
 	prepararTeste(t, 1)
 	cancelarParticipacao("B-T9", "teste")
@@ -82,7 +78,6 @@ func TestCancelarAntesDoPreparar(t *testing.T) {
 	}
 }
 
-// Cancelar devolve o assento; confirmar registra o passageiro.
 func TestConfirmarECancelar(t *testing.T) {
 	prepararTeste(t, 2)
 	preparar("B-T1", "B", "ana", umTrecho)
@@ -95,7 +90,6 @@ func TestConfirmarECancelar(t *testing.T) {
 	}
 }
 
-// Itinerário com a própria empresa: confirma tudo ou nada.
 func TestItinerarioLocalTudoOuNada(t *testing.T) {
 	prepararTeste(t, 1)
 	if _, err := reservarItinerario("ana", umTrecho); err != nil {
@@ -106,7 +100,6 @@ func TestItinerarioLocalTudoOuNada(t *testing.T) {
 	}
 }
 
-// Ajuste da decisão 8: perguntaram a decisão enquanto ainda "perguntando" -> cancela.
 func TestPerguntaAntesDaDecisaoCancela(t *testing.T) {
 	prepararTeste(t, 1)
 	estado.Transacoes["A-T1"] = &Transacao{ID: "A-T1", Estado: perguntando}
@@ -118,7 +111,6 @@ func TestPerguntaAntesDaDecisaoCancela(t *testing.T) {
 	}
 }
 
-// Recuperação: transação sem decisão vira cancelar ao religar.
 func TestRecuperarSemDecisao(t *testing.T) {
 	prepararTeste(t, 1)
 	estado.Transacoes["A-T1"] = &Transacao{ID: "A-T1", Estado: perguntando}
@@ -128,10 +120,9 @@ func TestRecuperarSemDecisao(t *testing.T) {
 	}
 }
 
-// Válvula: coordenador fora do ar por tempo demais -> o dono libera sozinho.
 func TestValvulaLibera(t *testing.T) {
 	prepararTeste(t, 1)
-	pares = map[string]string{"B": "http://127.0.0.1:1"} // ninguém escuta aqui
+	pares = map[string]string{"B": "http://127.0.0.1:1"} // coordenador inalcançável
 	preparar("B-T1", "B", "p", umTrecho)
 	estado.Participacoes["B-T1"].Desde = time.Now().Add(-10 * time.Minute)
 	prazoProvisorio, valvula, intervaloVigia = time.Millisecond, time.Minute, 10*time.Millisecond

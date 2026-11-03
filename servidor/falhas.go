@@ -1,12 +1,7 @@
 package main
 
-// falhas.go: o que acontece quando alguém cai (decisões 8 e 9).
-//
-//  - recuperar: ao religar, transação sem decisão gravada vira "cancelar".
-//  - vigiarProvisorios (DONO): provisório com prazo vencido pergunta ao
-//    coordenador; sem resposta, segura e pergunta de novo; passou da
-//    válvula (5 min), libera sozinho.
-//  - reenviarDecisoes (COORDENADOR): quem não recebeu a decisão recebe de novo.
+// Tratamento de quedas: recuperação ao religar, vigia dos assentos
+// provisórios (lado dono) e reenvio de decisões (lado coordenador).
 
 import (
 	"log"
@@ -16,14 +11,11 @@ import (
 	"time"
 )
 
-// ---------- Falha simulada (só para a demonstração e o teste) ----------
+// Falha simulada, usada na demonstração e no teste: derruba o processo num
+// ponto exato do 2PC na próxima transação coordenada por esta empresa.
 //
-// POST /simular-falha?ponto=apos-fase1   cai depois dos votos, ANTES de gravar a decisão
-// POST /simular-falha?ponto=apos-decisao cai DEPOIS de gravar a decisão, antes de avisar
-//
-// Vale para a PRÓXIMA transação coordenada por esta empresa. O processo morre
-// de verdade (como se o contêiner tivesse caído naquele instante).
-
+//	apos-fase1   -> depois dos votos, antes de gravar a decisão
+//	apos-decisao -> depois de gravar a decisão, antes de avisar as partes
 var (
 	pontoDeFalha  string
 	travaDaFalha  sync.Mutex
@@ -43,7 +35,6 @@ func rotaSimularFalha(w http.ResponseWriter, r *http.Request) {
 	responderJSON(w, http.StatusOK, map[string]string{"armada": ponto})
 }
 
-// talvezCair derruba o processo se a falha estiver armada neste ponto.
 func talvezCair(ponto string) {
 	travaDaFalha.Lock()
 	defer travaDaFalha.Unlock()
@@ -54,19 +45,19 @@ func talvezCair(ponto string) {
 }
 
 var (
-	prazoProvisorio = 30 * time.Second // depois disso o dono pergunta ao coordenador
-	valvula         = 5 * time.Minute  // depois disso o dono libera sozinho
-	intervaloVigia  = 5 * time.Second  // de quanto em quanto tempo os vigias rodam
+	prazoProvisorio = 30 * time.Second // a partir daqui o dono pergunta ao coordenador
+	valvula         = 5 * time.Minute  // a partir daqui o dono libera sem resposta
+	intervaloVigia  = 5 * time.Second
 )
 
-// recuperar roda UMA vez ao ligar, depois de carregar o arquivo.
+// recuperar roda uma vez ao ligar. Transação sem decisão gravada é cancelada,
+// porque nenhum "confirmar" pode ter sido enviado antes da gravação.
 func recuperar() {
 	trava.Lock()
 	defer trava.Unlock()
 
 	for _, tx := range estado.Transacoes {
 		if tx.Estado == perguntando {
-			// Caí no meio da fase 1, sem decisão gravada: presumir cancelado.
 			tx.Estado = cancelar
 			tx.Motivo = "coordenador caiu antes de decidir"
 			log.Printf("[recuperacao] %s estava sem decisao -> CANCELAR", tx.ID)
@@ -84,10 +75,10 @@ func recuperar() {
 	salvar()
 }
 
-// vigiarProvisorios roda para sempre numa goroutine (lado DONO).
+// vigiarProvisorios: provisório vencido pergunta ao coordenador; sem resposta
+// continua segurando, e só libera sozinho depois da válvula.
 func vigiarProvisorios() {
 	for range time.Tick(intervaloVigia) {
-		// Copia a lista com a trava pega; pergunta pela rede SEM a trava.
 		type pendente struct {
 			tx, coordenador string
 			desde           time.Time
@@ -101,6 +92,7 @@ func vigiarProvisorios() {
 		}
 		trava.Unlock()
 
+		// As perguntas são feitas fora da trava.
 		for _, p := range lista {
 			decisao, err := perguntarDecisao(p.coordenador, p.tx)
 			switch {
@@ -119,7 +111,7 @@ func vigiarProvisorios() {
 	}
 }
 
-// reenviarDecisoes roda para sempre numa goroutine (lado COORDENADOR).
+// reenviarDecisoes reenvia decisões que alguma parte ainda não recebeu.
 func reenviarDecisoes() {
 	for range time.Tick(intervaloVigia) {
 		var lista []*Transacao

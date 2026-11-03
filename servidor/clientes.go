@@ -1,8 +1,7 @@
 package main
 
-// clientes.go: atendimento dos clientes motorista/passageiro DESTA empresa,
-// por socket TCP (adaptado do Problema 1). O cliente nunca fala com outra
-// empresa: quem fala com as outras é este servidor, pela API REST.
+// Atendimento TCP dos clientes motorista/passageiro desta empresa (protocolo
+// do Problema 1). O cliente nunca fala com outra empresa.
 
 import (
 	"bufio"
@@ -19,11 +18,10 @@ import (
 )
 
 var (
-	tempoOcioso  = 5 * time.Minute  // cliente mudo esse tempo -> fecha a conexão
-	prazoEscrita = 10 * time.Second // prazo para entregar uma resposta
+	tempoOcioso  = 5 * time.Minute
+	prazoEscrita = 10 * time.Second
 )
 
-// ouvirClientes aceita conexões TCP para sempre, uma goroutine por cliente.
 func ouvirClientes(porta string) {
 	ouvinte, err := net.Listen("tcp", ":"+porta)
 	if err != nil {
@@ -42,13 +40,13 @@ func ouvirClientes(porta string) {
 func atender(conexao net.Conn) {
 	defer conexao.Close()
 	leitor := bufio.NewReader(conexao)
-	var logado Usuario // quem está logado nesta conexão
+	var logado Usuario
 
 	for {
 		conexao.SetReadDeadline(time.Now().Add(tempoOcioso))
 		pedido, err := protocolo.LerPedido(leitor)
 
-		// Linha chegou, mas não é JSON válido: avisa e continua atendendo.
+		// Mensagem malformada não derruba a conexão.
 		if errors.Is(err, protocolo.ErrMensagemInvalida) {
 			if responder(conexao, falha(err.Error())) != nil {
 				return
@@ -77,7 +75,6 @@ func falha(mensagem string) protocolo.Resposta {
 	return protocolo.Resposta{OK: false, Erro: mensagem}
 }
 
-// executar olha a ação do pedido e chama a função certa.
 func executar(p protocolo.Pedido, logado *Usuario) protocolo.Resposta {
 	if p.Acao != "ping" && p.Acao != "login" && p.Acao != "registrar" && logado.Login == "" {
 		return falha("faca login primeiro")

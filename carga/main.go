@@ -5,7 +5,7 @@
 //	go run ./carga -modo verificar   lê o estado de todas as empresas e confere
 //	                                 as 3 invariantes (sai com código 1 se falhar)
 //
-// Os passageiros usam o MESMO protocolo TCP dos clientes reais, cada um no
+// Os passageiros usam o mesmo protocolo TCP dos clientes reais, cada um no
 // servidor da sua empresa.
 package main
 

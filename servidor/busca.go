@@ -1,11 +1,8 @@
 package main
 
-// busca.go: busca distribuída (barema item 3).
-// Estratégia: consulta em TEMPO REAL. A cada busca, pergunta a cada empresa
-// as caronas dela (GET /caronas), sem guardar cópia. Empresa fora do ar é
-// pulada e o passageiro é avisado; as outras continuam aparecendo.
-//
-// Combinações: busca num grafo de cidades (até 3 caronas por itinerário).
+// Busca distribuída por consulta em tempo real: a cada busca todas as empresas
+// são consultadas, sem guardar cópia. Empresa fora do ar é pulada e informada
+// ao passageiro.
 
 import (
 	"fmt"
@@ -16,9 +13,8 @@ import (
 	"github.com/ecomphenrick/PBL2/protocolo"
 )
 
-// buscar devolve as opções encontradas e a lista de empresas que não responderam.
+// buscar devolve as opções e as empresas que não responderam.
 func buscar(origem, destino, data string) ([]protocolo.Opcao, []string) {
-	// Caronas desta empresa (cópia feita com a trava pega).
 	trava.Lock()
 	todas := []Carona{}
 	for _, c := range estado.Caronas {
@@ -28,10 +24,9 @@ func buscar(origem, destino, data string) ([]protocolo.Opcao, []string) {
 	}
 	trava.Unlock()
 
-	// Caronas das outras empresas, todas ao mesmo tempo.
 	var (
 		espera   sync.WaitGroup
-		protege  sync.Mutex // protege 'todas' e 'foraDoAr' entre as goroutines
+		protege  sync.Mutex // as goroutines escrevem em 'todas' e 'foraDoAr'
 		foraDoAr []string
 	)
 	for empresa := range pares {
@@ -55,7 +50,6 @@ func buscar(origem, destino, data string) ([]protocolo.Opcao, []string) {
 	return combinar(todas, origem, destino), foraDoAr
 }
 
-// cidades devolve a rota da carona: origem do 1º trecho + destino de cada trecho.
 func cidades(c Carona) []string {
 	if len(c.Trechos) == 0 {
 		return nil
@@ -68,19 +62,19 @@ func cidades(c Carona) []string {
 }
 
 const (
-	maxCaronas = 3  // no máximo 3 caronas (2 conexões) por itinerário
-	maxOpcoes  = 15 // quantas opções mostrar ao passageiro
+	maxCaronas = 3
+	maxOpcoes  = 15
 )
 
-// combinar procura itinerários num GRAFO: cada cidade é um vértice e cada
-// pedaço de carona com assento livre é uma aresta. Busca em profundidade a
-// partir da origem, sem repetir cidade nem carona, até maxCaronas caronas.
+// combinar monta os itinerários num grafo: cidade = vértice, pedaço de carona
+// com assento livre = aresta. Busca em profundidade a partir da origem, sem
+// repetir cidade nem carona, até maxCaronas caronas.
 func combinar(caronas []Carona, origem, destino string) []protocolo.Opcao {
 	var (
 		opcoes    []protocolo.Opcao
-		caminho   []protocolo.Item    // caronas escolhidas até agora
-		visitadas = map[string]bool{} // cidades já usadas neste caminho
-		usadas    = map[string]bool{} // caronas já usadas neste caminho
+		caminho   []protocolo.Item
+		visitadas = map[string]bool{}
+		usadas    = map[string]bool{}
 		procurar  func(cidade string)
 	)
 	procurar = func(cidade string) {
@@ -96,7 +90,7 @@ func combinar(caronas []Carona, origem, destino string) []protocolo.Opcao {
 				if !strings.EqualFold(rota[i], cidade) {
 					continue
 				}
-				// Desce pela carona enquanto houver assento em cada perna.
+				// Uma perna lotada interrompe a carona dali em diante.
 				for j := i + 1; j < len(rota) && c.Trechos[j-1].Assentos > 0; j++ {
 					proxima := strings.ToLower(rota[j])
 					if visitadas[proxima] {
@@ -118,7 +112,7 @@ func combinar(caronas []Carona, origem, destino string) []protocolo.Opcao {
 	visitadas[strings.ToLower(origem)] = true
 	procurar(origem)
 
-	// Menos caronas primeiro; depois a mais barata.
+	// Menos baldeações primeiro; depois a mais barata.
 	sort.SliceStable(opcoes, func(i, j int) bool {
 		if len(opcoes[i].Itens) != len(opcoes[j].Itens) {
 			return len(opcoes[i].Itens) < len(opcoes[j].Itens)
@@ -131,7 +125,6 @@ func combinar(caronas []Carona, origem, destino string) []protocolo.Opcao {
 	return opcoes
 }
 
-// montarOpcao calcula o preço e o resumo legível de um itinerário.
 func montarOpcao(caronas []Carona, itens ...protocolo.Item) protocolo.Opcao {
 	o := protocolo.Opcao{Itens: itens}
 	var partes []string

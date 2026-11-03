@@ -1,15 +1,15 @@
 package main
 
-// api.go: a API REST que as OUTRAS empresas chamam (e o teste, para conferir).
+// API REST entre as empresas (especificação em docs/api/API.md).
 //
-//   GET  /saude                       estou vivo?
-//   GET  /caronas?data=AAAA-MM-DD     caronas DESTA empresa (busca distribuída)
+//   GET  /saude
+//   GET  /caronas?data=AAAA-MM-DD     caronas desta empresa
 //   POST /transacoes/{id}/preparar    fase 1 do 2PC   -> 200 sim | 409 nao
 //   POST /transacoes/{id}/confirmar   fase 2          -> 200 | 409
 //   POST /transacoes/{id}/cancelar    fase 2          -> 200 | 409
 //   GET  /transacoes/{id}/decisao     dono pergunta ao coordenador
-//   GET  /estado                      tudo desta empresa (para o teste)
-//   POST /simular-falha?ponto=...     derruba esta empresa num ponto do 2PC (demonstração)
+//   GET  /estado                      usado pelo verificador de invariantes
+//   POST /simular-falha?ponto=...     demonstração de queda
 
 import (
 	"encoding/json"
@@ -26,10 +26,9 @@ func registrarRotas() {
 	http.HandleFunc("POST /transacoes/{id}/cancelar", rotaCancelar)
 	http.HandleFunc("GET /transacoes/{id}/decisao", rotaDecisao)
 	http.HandleFunc("GET /estado", rotaEstado)
-	http.HandleFunc("POST /simular-falha", rotaSimularFalha) // só demonstração (falhas.go)
+	http.HandleFunc("POST /simular-falha", rotaSimularFalha)
 }
 
-// responderJSON escreve o código HTTP e o corpo em JSON.
 func responderJSON(w http.ResponseWriter, codigo int, corpo any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(codigo)
@@ -41,7 +40,7 @@ func erroJSON(w http.ResponseWriter, codigo int, mensagem string) {
 }
 
 func listarCaronas(w http.ResponseWriter, r *http.Request) {
-	data := r.URL.Query().Get("data") // vazio = todas
+	data := r.URL.Query().Get("data")
 	trava.Lock()
 	lista := []Carona{}
 	for _, c := range estado.Caronas {
@@ -97,7 +96,7 @@ func rotaDecisao(w http.ResponseWriter, r *http.Request) {
 
 func rotaEstado(w http.ResponseWriter, r *http.Request) {
 	trava.Lock()
-	dados, err := json.Marshal(estado) // copia enquanto a trava está pega
+	dados, err := json.Marshal(estado)
 	trava.Unlock()
 	if err != nil {
 		erroJSON(w, http.StatusInternalServerError, err.Error())

@@ -1,9 +1,7 @@
 package main
 
-// main.go: liga o servidor de UMA empresa.
-//
-// Configuração por variáveis de ambiente (assim a mesma imagem Docker serve
-// para qualquer empresa e qualquer máquina do laboratório):
+// Servidor de uma empresa. A configuração vem de variáveis de ambiente, para
+// a mesma imagem Docker servir a qualquer empresa e máquina:
 //
 //   EMPRESA          letra da empresa (A, B, C...)              padrão: A
 //   PORTA_API        porta HTTP da API REST entre servidores     padrão: 8080
@@ -21,7 +19,6 @@ import (
 	"time"
 )
 
-// variavel lê uma variável de ambiente ou devolve o padrão.
 func variavel(nome, padrao string) string {
 	if v := os.Getenv(nome); v != "" {
 		return v
@@ -29,7 +26,6 @@ func variavel(nome, padrao string) string {
 	return padrao
 }
 
-// duracao lê uma variável como tempo ("30s", "5m") ou devolve o padrão.
 func duracao(nome string, padrao time.Duration) time.Duration {
 	if d, err := time.ParseDuration(os.Getenv(nome)); err == nil {
 		return d
@@ -37,7 +33,7 @@ func duracao(nome string, padrao time.Duration) time.Duration {
 	return padrao
 }
 
-// lerPares transforma "B=http://x:8080,C=http://y:8080" no mapa pares.
+// lerPares: "B=http://x:8080,C=http://y:8080".
 func lerPares(texto string) {
 	for _, item := range strings.Split(texto, ",") {
 		empresa, endereco, ok := strings.Cut(strings.TrimSpace(item), "=")
@@ -54,7 +50,7 @@ func main() {
 	prazoProvisorio = duracao("PRAZO_PROVISORIO", prazoProvisorio)
 	valvula = duracao("VALVULA", valvula)
 	lerPares(variavel("PARES", ""))
-	delete(pares, empresa) // eu não sou meu próprio par
+	delete(pares, empresa)
 
 	if err := carregar(empresa); err != nil {
 		log.Fatalf("erro ao carregar %s: %v", arquivo, err)
@@ -63,9 +59,9 @@ func main() {
 		arquivo, len(estado.Caronas), len(estado.Transacoes), len(estado.Participacoes))
 	log.Printf("pares: %v | provisorio %s | valvula %s | timeout %s", pares, prazoProvisorio, valvula, timeoutRede)
 
-	recuperar()            // decisão 9: arruma o que ficou pela metade antes de atender
-	go vigiarProvisorios() // decisão 8 (lado dono)
-	go reenviarDecisoes()  // decisão 9 (lado coordenador)
+	recuperar() // antes de atender qualquer pedido
+	go vigiarProvisorios()
+	go reenviarDecisoes()
 	go ouvirClientes(variavel("PORTA_CLIENTES", "9000"))
 
 	registrarRotas()

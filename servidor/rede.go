@@ -1,11 +1,8 @@
 package main
 
-// rede.go: como ESTA empresa fala com as OUTRAS (só API REST).
-// Toda chamada tem timeout (decisão 8 / regra 4): sem resposta a tempo, aquela
-// empresa é tratada como fora do ar NAQUELE pedido e seguimos com o resto.
-//
-// Quando a "outra" empresa somos nós mesmos (passageiro usa carona da própria
-// empresa), chamamos a função local direto: o caminho lógico é o mesmo.
+// Chamadas às outras empresas. Toda chamada tem timeout: sem resposta, a
+// empresa é tratada como fora do ar naquele pedido e o resto segue normal.
+// Quando o destino é a própria empresa, a função local é chamada direto.
 
 import (
 	"bytes"
@@ -20,11 +17,10 @@ import (
 var (
 	timeoutRede = 3 * time.Second
 	clienteHTTP = &http.Client{Timeout: timeoutRede}
-	pares       = map[string]string{} // empresa -> endereço base, ex.: "B" -> "http://empresa-b:8080"
+	pares       = map[string]string{} // ex.: "B" -> "http://empresa-b:8080"
 )
 
-// chamar faz um pedido HTTP a outra empresa. corpo pode ser nil; resposta
-// (se não for nil) recebe o JSON devolvido. Devolve o código HTTP.
+// chamar devolve o código HTTP; corpo e resposta podem ser nil.
 func chamar(empresa, metodo, caminho string, corpo, resposta any) (int, error) {
 	base, conhecida := pares[empresa]
 	if !conhecida {
@@ -46,7 +42,7 @@ func chamar(empresa, metodo, caminho string, corpo, resposta any) (int, error) {
 	}
 	pedido.Header.Set("Content-Type", "application/json")
 
-	r, err := clienteHTTP.Do(pedido) // aqui o timeout age
+	r, err := clienteHTTP.Do(pedido)
 	if err != nil {
 		return 0, err
 	}
@@ -59,25 +55,22 @@ func chamar(empresa, metodo, caminho string, corpo, resposta any) (int, error) {
 	return r.StatusCode, nil
 }
 
-// Corpo do POST /transacoes/{id}/preparar.
 type PedidoPreparar struct {
 	Coordenador string           `json:"coordenador"`
 	Passageiro  string           `json:"passageiro"`
 	Itens       []protocolo.Item `json:"itens"`
 }
 
-// Resposta do preparar.
 type RespostaVoto struct {
-	Voto   string `json:"voto"` // "sim" ou "nao"
+	Voto   string `json:"voto"`
 	Motivo string `json:"motivo,omitempty"`
 }
 
-// Resposta do GET /transacoes/{id}/decisao.
 type RespostaDecisao struct {
-	Decisao string `json:"decisao"` // "confirmar" ou "cancelar"
+	Decisao string `json:"decisao"`
 }
 
-// pedirPreparar manda a FASE 1 a uma empresa. Sem resposta = "nao".
+// pedirPreparar: sem resposta conta como "não".
 func pedirPreparar(empresa, tx, passageiro string, itens []protocolo.Item) (bool, string) {
 	if empresa == estado.Empresa {
 		return preparar(tx, estado.Empresa, passageiro, itens)
@@ -90,8 +83,7 @@ func pedirPreparar(empresa, tx, passageiro string, itens []protocolo.Item) (bool
 	return v.Voto == "sim", v.Motivo
 }
 
-// enviarDecisao manda a FASE 2 a uma empresa. Devolve true se ela recebeu
-// (ou se não adianta insistir). false = tentar de novo mais tarde.
+// enviarDecisao devolve false quando vale tentar de novo mais tarde.
 func enviarDecisao(empresa, tx, decisao string) bool {
 	if empresa == estado.Empresa {
 		var err error
@@ -104,12 +96,11 @@ func enviarDecisao(empresa, tx, decisao string) bool {
 	}
 	codigo, err := chamar(empresa, "POST", "/transacoes/"+tx+"/"+decisao, nil, nil)
 	if err != nil {
-		return false // fora do ar: o reenvio periódico tenta de novo
+		return false
 	}
 	return codigo == http.StatusOK || codigo == http.StatusConflict
 }
 
-// perguntarDecisao: o DONO pergunta ao coordenador o que foi decidido.
 func perguntarDecisao(coordenador, tx string) (string, error) {
 	if coordenador == estado.Empresa {
 		return consultarDecisao(tx), nil
