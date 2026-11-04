@@ -2,6 +2,7 @@
 //
 //	go run ./carga -modo semear      publica caronas (motoristas) em cada empresa
 //	go run ./carga -modo carga       muitos passageiros reservando ao mesmo tempo
+//	go run ./carga -modo cruzado     reservas cruzadas: mesmos trechos, ordens opostas
 //	go run ./carga -modo verificar   lê o estado de todas as empresas e confere
 //	                                 as 3 invariantes (sai com código 1 se falhar)
 //
@@ -26,7 +27,8 @@ import (
 )
 
 var (
-	modo        = flag.String("modo", "carga", "semear | carga | verificar")
+	modo        = flag.String("modo", "carga", "semear | carga | cruzado | verificar")
+	rodadas     = flag.Int("rodadas", 20, "modo cruzado: quantas disputas")
 	clientes    = flag.String("clientes", "A=localhost:9001,B=localhost:9002,C=localhost:9003", "porta TCP de cada empresa")
 	api         = flag.String("api", "A=http://localhost:8081,B=http://localhost:8082,C=http://localhost:8083", "API REST de cada empresa")
 	passageiros = flag.Int("passageiros", 30, "quantos passageiros simultâneos")
@@ -40,6 +42,10 @@ func main() {
 		semear()
 	case "carga":
 		carga()
+	case "cruzado":
+		if !cruzado() {
+			os.Exit(1)
+		}
 	case "verificar":
 		if !verificar() {
 			os.Exit(1)
@@ -213,6 +219,88 @@ func umPassageiro(endereco, nome string, viagem [2]string, largada chan struct{}
 	default:
 		return "recusada", time.Since(comeco)
 	}
+}
+
+// ---------- cruzado ----------
+
+// cruzado: em cada rodada, B e C publicam uma carona de 1 assento cada
+// (Feira -> Conquista e Conquista -> Ilheus). Um passageiro da A pede
+// [B, C] e um da C pede [C, B], ao mesmo tempo. Com espera, cada um poderia
+// segurar um trecho esperando o outro (deadlock). Com "ninguém espera" o
+// sistema nunca trava: no máximo um confirma, às vezes os dois são recusados.
+func cruzado() bool {
+	enderecos := mapa(*clientes)
+	motoB, err1 := conectarComo(enderecos["B"], "motorista-B", "motorista")
+	motoC, err2 := conectarComo(enderecos["C"], "motorista-C", "motorista")
+	pass1, err3 := conectarComo(enderecos["A"], "cruzado-A", "passageiro")
+	pass2, err4 := conectarComo(enderecos["C"], "cruzado-C", "passageiro")
+	for _, err := range []error{err1, err2, err3, err4} {
+		if err != nil {
+			fmt.Println("FALHA ao conectar:", err)
+			return false
+		}
+	}
+
+	contagem := map[int]int{} // quantos confirmaram na rodada -> quantas rodadas
+	travou := 0
+	var pior time.Duration
+	inicio := time.Now()
+	for i := 0; i < *rodadas; i++ {
+		b, _ := motoB.pedir(protocolo.Pedido{Acao: "cadastrar", Rota: []string{"Feira", "Conquista"}, Data: *data, Assentos: 1, Preco: 20})
+		c, _ := motoC.pedir(protocolo.Pedido{Acao: "cadastrar", Rota: []string{"Conquista", "Ilheus"}, Data: *data, Assentos: 1, Preco: 20})
+		itemB := protocolo.Item{Carona: b.CaronaID, De: 0, Ate: 1}
+		itemC := protocolo.Item{Carona: c.CaronaID, De: 0, Ate: 1}
+
+		var espera sync.WaitGroup
+		ok := make([]bool, 2)
+		erro := make([]bool, 2)
+		comeco := time.Now()
+		for j, s := range []*sessao{pass1, pass2} {
+			itens := []protocolo.Item{itemB, itemC} // ordem B, C
+			if j == 1 {
+				itens = []protocolo.Item{itemC, itemB} // ordem oposta: C, B
+			}
+			espera.Add(1)
+			go func() {
+				defer espera.Done()
+				r, err := s.pedir(protocolo.Pedido{Acao: "reservar", Itens: itens})
+				ok[j], erro[j] = err == nil && r.OK, err != nil
+			}()
+		}
+		espera.Wait()
+		pior = max(pior, time.Since(comeco))
+		if erro[0] || erro[1] {
+			travou++ // sem resposta dentro do prazo do cliente (20 s)
+		}
+		n := 0
+		for _, v := range ok {
+			if v {
+				n++
+			}
+		}
+		contagem[n]++
+	}
+
+	fmt.Printf("\n%d rodadas de reservas cruzadas em %s (pior rodada: %s)\n",
+		*rodadas, time.Since(inicio).Round(time.Millisecond), pior.Round(time.Millisecond))
+	fmt.Printf("  um confirmou:          %d\n", contagem[1])
+	fmt.Printf("  os dois recusados:     %d  (aborto desnecessario: efeito colateral do no-wait)\n", contagem[0])
+	fmt.Printf("  os dois confirmaram:   %d  (seria venda dupla)\n", contagem[2])
+	fmt.Printf("  sem resposta (travou): %d\n", travou)
+	if contagem[2] > 0 || travou > 0 {
+		fmt.Println("FALHA")
+		return false
+	}
+	fmt.Println("OK: nenhuma rodada travou e nenhuma vendeu o mesmo assento duas vezes")
+	return true
+}
+
+func conectarComo(endereco, usuario, tipo string) (*sessao, error) {
+	s, err := conectar(endereco)
+	if err != nil {
+		return nil, err
+	}
+	return s, s.entrar(usuario, tipo)
 }
 
 // ---------- verificar ----------
