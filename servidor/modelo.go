@@ -46,6 +46,8 @@ type Participacao struct {
 	Itens       []protocolo.Item `json:"itens"`
 	Estado      string           `json:"estado"`
 	Desde       time.Time        `json:"desde"` // relógio local, usado só para medir o prazo
+	// Todas as empresas da transação, para perguntar a elas se o coordenador sumir.
+	Participantes []string `json:"participantes,omitempty"`
 }
 
 // Estados de uma transação (lado do coordenador).

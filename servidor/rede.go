@@ -56,9 +56,14 @@ func chamar(empresa, metodo, caminho string, corpo, resposta any) (int, error) {
 }
 
 type PedidoPreparar struct {
-	Coordenador string           `json:"coordenador"`
-	Passageiro  string           `json:"passageiro"`
-	Itens       []protocolo.Item `json:"itens"`
+	Coordenador   string           `json:"coordenador"`
+	Passageiro    string           `json:"passageiro"`
+	Itens         []protocolo.Item `json:"itens"`
+	Participantes []string         `json:"participantes"`
+}
+
+type RespostaSituacao struct {
+	Situacao string `json:"situacao"`
 }
 
 type RespostaVoto struct {
@@ -71,12 +76,12 @@ type RespostaDecisao struct {
 }
 
 // pedirPreparar: sem resposta conta como "não".
-func pedirPreparar(empresa, tx, passageiro string, itens []protocolo.Item) (bool, string) {
+func pedirPreparar(empresa, tx, passageiro string, itens []protocolo.Item, participantes []string) (bool, string) {
 	if empresa == estado.Empresa {
-		return preparar(tx, estado.Empresa, passageiro, itens)
+		return preparar(tx, estado.Empresa, passageiro, itens, participantes)
 	}
 	var v RespostaVoto
-	corpo := PedidoPreparar{Coordenador: estado.Empresa, Passageiro: passageiro, Itens: itens}
+	corpo := PedidoPreparar{Coordenador: estado.Empresa, Passageiro: passageiro, Itens: itens, Participantes: participantes}
 	if _, err := chamar(empresa, "POST", "/transacoes/"+tx+"/preparar", corpo, &v); err != nil {
 		return false, "empresa " + empresa + " sem resposta"
 	}
@@ -110,4 +115,13 @@ func perguntarDecisao(coordenador, tx string) (string, error) {
 		return "", err
 	}
 	return d.Decisao, nil
+}
+
+// perguntarSituacao pergunta a outra participante o que ela sabe da transação.
+func perguntarSituacao(empresa, tx string) (string, error) {
+	var s RespostaSituacao
+	if _, err := chamar(empresa, "GET", "/transacoes/"+tx+"/situacao", nil, &s); err != nil {
+		return "", err
+	}
+	return s.Situacao, nil
 }

@@ -21,7 +21,7 @@ implementadas no próprio código, em Go.
 | Exclusão mútua e precedência | O dono do trecho decide, pela ordem de chegada na trava (`sync.Mutex`) dele; sem relógio | `servidor/dono.go` |
 | Deadlock | "Ninguém espera": sem assento livre, o dono responde **não** na hora | `servidor/dono.go` |
 | Atomicidade | Commit em duas fases (2PC). Coordenador = empresa do passageiro; participantes = donas dos trechos | `servidor/coordenador.go` |
-| Falhas | Timeout em toda chamada; provisório pergunta ao coordenador após 30 s; válvula libera após 5 min | `servidor/falhas.go`, `servidor/rede.go` |
+| Falhas | Timeout em toda chamada; provisório pergunta ao coordenador após 30 s; se ele não responde, pergunta às outras participantes (terminação cooperativa). Quem votou "sim" nunca libera sozinho | `servidor/falhas.go`, `servidor/rede.go` |
 | Persistência | Tudo é gravado em disco **antes** de responder; o coordenador grava a decisão antes do primeiro "confirmar" | `servidor/modelo.go` |
 | Recuperação | Ao religar: transação sem decisão vira "cancelar"; decisão gravada é reenviada | `servidor/falhas.go` |
 
@@ -131,6 +131,8 @@ docker run --rm vaijunto /bin/carga -modo semear \
   -clientes "A=IP1:9000,B=IP2:9000,C=IP3:9000"
 docker run --rm vaijunto /bin/carga -modo carga -passageiros 60 \
   -clientes "A=IP1:9000,B=IP2:9000,C=IP3:9000"
+docker run --rm vaijunto /bin/carga -modo cruzado -data 2026-11-07 \
+  -clientes "A=IP1:9000,B=IP2:9000,C=IP3:9000"
 docker run --rm vaijunto /bin/carga -modo verificar \
   -api "A=http://IP1:8080,B=http://IP2:8080,C=http://IP3:8080"
 ```
@@ -158,5 +160,4 @@ curl -X POST "http://IP1:8080/simular-falha?ponto=apos-decisao"  # cai depois de
 | `PORTA_API` | `8080` | porta da API REST entre servidores |
 | `PORTA_CLIENTES` | `9000` | porta TCP dos clientes |
 | `DADOS` | `/dados/estado.json` | arquivo de estado (no contêiner) |
-| `PRAZO_PROVISORIO` | `30s` | após esse tempo, o dono pergunta a decisão ao coordenador |
-| `VALVULA` | `5m` | após esse tempo sem resposta do coordenador, o dono libera o assento |
+| `PRAZO_PROVISORIO` | `30s` | após esse tempo, o dono pergunta a decisão ao coordenador (e, sem resposta, às outras participantes) |

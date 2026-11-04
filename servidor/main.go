@@ -9,7 +9,6 @@ package main
 //   PARES            outras empresas: "B=http://IP:8080,C=http://IP:8080"
 //   DADOS            arquivo onde o estado é gravado             padrão: estado-<EMPRESA>.json
 //   PRAZO_PROVISORIO quanto o dono espera antes de perguntar     padrão: 30s
-//   VALVULA          quanto o dono espera antes de liberar sozinho padrão: 5m
 
 import (
 	"log"
@@ -48,7 +47,6 @@ func main() {
 	log.SetPrefix("[empresa " + empresa + "] ")
 	arquivo = variavel("DADOS", "estado-"+empresa+".json")
 	prazoProvisorio = duracao("PRAZO_PROVISORIO", prazoProvisorio)
-	valvula = duracao("VALVULA", valvula)
 	lerPares(variavel("PARES", ""))
 	delete(pares, empresa)
 
@@ -57,7 +55,7 @@ func main() {
 	}
 	log.Printf("estado carregado de %s: %d carona(s), %d transacao(oes) coordenada(s), %d participacao(oes)",
 		arquivo, len(estado.Caronas), len(estado.Transacoes), len(estado.Participacoes))
-	log.Printf("pares: %v | provisorio %s | valvula %s | timeout %s", pares, prazoProvisorio, valvula, timeoutRede)
+	log.Printf("pares: %v | provisorio %s | timeout %s", pares, prazoProvisorio, timeoutRede)
 
 	recuperar() // antes de atender qualquer pedido
 	go vigiarProvisorios()

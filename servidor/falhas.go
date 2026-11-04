@@ -46,7 +46,6 @@ func talvezCair(ponto string) {
 
 var (
 	prazoProvisorio = 30 * time.Second // a partir daqui o dono pergunta ao coordenador
-	valvula         = 5 * time.Minute  // a partir daqui o dono libera sem resposta
 	intervaloVigia  = 5 * time.Second
 )
 
@@ -75,40 +74,71 @@ func recuperar() {
 	salvar()
 }
 
-// vigiarProvisorios: provisório vencido pergunta ao coordenador; sem resposta
-// continua segurando, e só libera sozinho depois da válvula.
 func vigiarProvisorios() {
 	for range time.Tick(intervaloVigia) {
-		type pendente struct {
-			tx, coordenador string
-			desde           time.Time
-		}
-		var lista []pendente
-		trava.Lock()
-		for _, p := range estado.Participacoes {
-			if p.Estado == provisorio && time.Since(p.Desde) > prazoProvisorio {
-				lista = append(lista, pendente{p.Transacao, p.Coordenador, p.Desde})
-			}
-		}
-		trava.Unlock()
+		vigiarUmaVez()
+	}
+}
 
-		// As perguntas são feitas fora da trava.
-		for _, p := range lista {
-			decisao, err := perguntarDecisao(p.coordenador, p.tx)
-			switch {
-			case err == nil && decisao == confirmar:
-				confirmarParticipacao(p.tx)
-			case err == nil:
-				cancelarParticipacao(p.tx, "coordenador respondeu "+decisao)
-			case time.Since(p.desde) > valvula:
-				log.Printf("[dono] %s: coordenador %s sumido ha mais de %s -> libero sozinho (valvula)",
-					p.tx, p.coordenador, valvula)
-				cancelarParticipacao(p.tx, "valvula de seguranca")
-			default:
-				log.Printf("[dono] %s: coordenador %s nao respondeu; continuo segurando", p.tx, p.coordenador)
-			}
+// vigiarUmaVez resolve os provisórios vencidos. Quem votou "sim" NUNCA libera
+// sozinho por prazo: o coordenador pode ter confirmado nas outras empresas.
+// Primeiro pergunta ao coordenador; se ele não responde, pergunta às outras
+// participantes (terminação cooperativa); se ninguém sabe, continua segurando.
+func vigiarUmaVez() {
+	type pendente struct {
+		tx, coordenador string
+		participantes   []string
+	}
+	var lista []pendente
+	trava.Lock()
+	for _, p := range estado.Participacoes {
+		if p.Estado == provisorio && time.Since(p.Desde) > prazoProvisorio {
+			lista = append(lista, pendente{p.Transacao, p.Coordenador, p.Participantes})
 		}
 	}
+	trava.Unlock()
+
+	// As perguntas são feitas fora da trava.
+	for _, p := range lista {
+		decisao, err := perguntarDecisao(p.coordenador, p.tx)
+		if err != nil {
+			decisao = perguntarParticipantes(p.tx, p.participantes)
+			if decisao != "" {
+				log.Printf("[dono] %s: coordenador %s fora do ar; outra participante sabia -> %s", p.tx, p.coordenador, decisao)
+			}
+		}
+		switch decisao {
+		case confirmar:
+			confirmarParticipacao(p.tx)
+		case "":
+			log.Printf("[dono] %s: coordenador %s fora do ar e ninguem sabe a decisao; continuo segurando", p.tx, p.coordenador)
+		default:
+			cancelarParticipacao(p.tx, "decisao: "+decisao)
+		}
+	}
+}
+
+// perguntarParticipantes devolve "confirmar", "cancelar" ou "" (ninguém sabe).
+//   - alguma confirmou          -> o coordenador decidiu confirmar
+//   - alguma cancelou ou recusou -> o coordenador não pode ter confirmado
+//   - todas provisórias/fora    -> só o coordenador sabe; esperar ele voltar
+func perguntarParticipantes(tx string, participantes []string) string {
+	for _, empresa := range participantes {
+		if empresa == estado.Empresa {
+			continue
+		}
+		s, err := perguntarSituacao(empresa, tx)
+		if err != nil {
+			continue
+		}
+		switch s {
+		case confirmado:
+			return confirmar
+		case cancelado, recusado:
+			return cancelar
+		}
+	}
+	return ""
 }
 
 // reenviarDecisoes reenvia decisões que alguma parte ainda não recebeu.

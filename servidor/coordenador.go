@@ -38,7 +38,12 @@ func reservarItinerario(passageiro string, itens []protocolo.Item) (string, erro
 	}
 	log.Printf("[coord] %s: FASE 1, perguntando a %d empresa(s)", tx.ID, len(partes))
 
-	// Fase 1: uma goroutine por empresa.
+	// Fase 1: uma goroutine por empresa. Cada uma recebe a lista de todas,
+	// para poder perguntar às outras se este coordenador cair.
+	var participantes []string
+	for _, parte := range partes {
+		participantes = append(participantes, parte.Empresa)
+	}
 	votos := make([]bool, len(partes))
 	motivos := make([]string, len(partes))
 	var espera sync.WaitGroup
@@ -46,7 +51,7 @@ func reservarItinerario(passageiro string, itens []protocolo.Item) (string, erro
 		espera.Add(1)
 		go func() {
 			defer espera.Done()
-			votos[i], motivos[i] = pedirPreparar(parte.Empresa, tx.ID, passageiro, parte.Itens)
+			votos[i], motivos[i] = pedirPreparar(parte.Empresa, tx.ID, passageiro, parte.Itens, participantes)
 		}()
 	}
 	espera.Wait()
