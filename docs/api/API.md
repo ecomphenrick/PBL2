@@ -105,13 +105,10 @@ vai ao **coordenador**.
 - A transação ainda está esperando votos: o coordenador **decide `cancelar` na hora**,
   grava e responde. Assim o dono nunca libera um assento que depois seria confirmado.
 
----|---|
-| `confirmado` | confirma: o coordenador decidiu confirmar |
-| `cancelado` ou `recusado` | cancela: com um "não" (ou um cancelar), o coordenador não pode ter confirmado |
-| `provisorio` | nada: só o coordenador sabe; continua segurando e pergunta de novo |
+**Sem resposta (timeout):** o dono continua segurando o assento e pergunta de novo a cada
+5 s, até o coordenador responder. Quem votou "sim" nunca libera o assento sozinho: o
+coordenador pode ter confirmado os outros trechos.
 
-Se a transação nunca chegou a esta empresa, ela anota `cancelado` antes de responder.
-Assim um `preparar` atrasado é recusado e o coordenador não consegue mais confirmar.
 Repetir a pergunta devolve a mesma resposta.
 
 ---
