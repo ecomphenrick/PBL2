@@ -6,8 +6,7 @@
 //	go run ./carga -modo verificar   lê o estado de todas as empresas e confere
 //	                                 as 3 invariantes (sai com código 1 se falhar)
 //
-// Os passageiros usam o mesmo protocolo TCP dos clientes reais, cada um no
-// servidor da sua empresa.
+// Os passageiros simulados usam o mesmo TCP dos clientes reais.
 package main
 
 import (
@@ -113,8 +112,8 @@ func (s *sessao) entrar(usuario, tipo string) error {
 
 // ---------- semear ----------
 
-// Cenário: uma cadeia Salvador -> Feira -> Conquista -> Ilheus, cada perna de
-// uma empresa, com POUCOS assentos para forçar disputa pelo último lugar.
+// Cenário: Salvador -> Feira -> Conquista -> Ilheus, cada pedaço de uma
+// empresa, com poucos assentos para forçar disputa.
 var cenario = map[string][][]string{
 	"A": {{"Salvador", "Feira"}},
 	"B": {{"Feira", "Conquista"}},
@@ -223,11 +222,9 @@ func umPassageiro(endereco, nome string, viagem [2]string, largada chan struct{}
 
 // ---------- cruzado ----------
 
-// cruzado: em cada rodada, B e C publicam uma carona de 1 assento cada
-// (Feira -> Conquista e Conquista -> Ilheus). Um passageiro da A pede
-// [B, C] e um da C pede [C, B], ao mesmo tempo. Com espera, cada um poderia
-// segurar um trecho esperando o outro (deadlock). Com "ninguém espera" o
-// sistema nunca trava: no máximo um confirma, às vezes os dois são recusados.
+// cruzado: B e C publicam uma carona de 1 assento cada. Um passageiro pede
+// [B, C] e outro pede [C, B] ao mesmo tempo. O sistema não pode travar e
+// no máximo um confirma (às vezes os dois são recusados).
 func cruzado() bool {
 	enderecos := mapa(*clientes)
 	motoB, err1 := conectarComo(enderecos["B"], "motorista-B", "motorista")
@@ -375,7 +372,7 @@ func verificar() bool {
 				}
 			}
 		}
-		// Invariante 1: nenhum assento vendido duas vezes (conta fecha e nunca passa do total).
+		// Invariante 1: nenhum assento vendido duas vezes.
 		for _, c := range est.Caronas {
 			for t, tr := range c.Trechos {
 				soma := tr.Assentos + len(tr.Passageiros) + presos[fmt.Sprintf("%s/%d", c.ID, t)]
@@ -385,7 +382,7 @@ func verificar() bool {
 				}
 			}
 		}
-		// Invariante 2 vista do coordenador: decisão "confirmar" => todas as donas confirmaram.
+		// Invariante 2: "confirmar" no coordenador => todas as donas confirmaram.
 		for tx, coord := range est.Transacoes {
 			for _, parte := range coord.Partes {
 				p := estados[parte.Empresa].Participacoes[tx]

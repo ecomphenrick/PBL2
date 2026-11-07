@@ -1,5 +1,4 @@
-// Mensagens entre cliente e servidor da própria empresa (TCP): um JSON por
-// linha, como no Problema 1. Item também é usado na API REST.
+// Mensagens entre cliente e servidor (TCP): um JSON por linha, como no Problema 1.
 package protocolo
 
 import (
