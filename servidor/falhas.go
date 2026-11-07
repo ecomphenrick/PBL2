@@ -1,7 +1,6 @@
 package main
 
-// Tratamento de quedas: recuperação ao religar, vigia dos assentos
-// provisórios (lado dono) e reenvio de decisões (lado coordenador).
+// Quedas: o que fazer ao religar e com assentos provisórios esquecidos.
 
 import (
 	"log"
@@ -11,11 +10,11 @@ import (
 	"time"
 )
 
-// Falha simulada, usada na demonstração e no teste: derruba o processo num
-// ponto exato do 2PC na próxima transação coordenada por esta empresa.
+// Falha simulada (para a demonstração): derruba a empresa num ponto exato
+// da próxima reserva que ela coordenar.
 //
 //	apos-fase1   -> depois dos votos, antes de gravar a decisão
-//	apos-decisao -> depois de gravar a decisão, antes de avisar as partes
+//	apos-decisao -> depois de gravar a decisão, antes de avisar as empresas
 var (
 	pontoDeFalha  string
 	travaDaFalha  sync.Mutex
@@ -45,12 +44,12 @@ func talvezCair(ponto string) {
 }
 
 var (
-	prazoProvisorio = 30 * time.Second // a partir daqui o dono pergunta ao coordenador
-	intervaloVigia  = 5 * time.Second
+	prazoProvisorio = 30 * time.Second // depois disso, o dono pergunta ao coordenador
+	intervaloVigia  = 5 * time.Second  // de quanto em quanto tempo pergunta
 )
 
-// recuperar roda uma vez ao ligar. Transação sem decisão gravada é cancelada,
-// porque nenhum "confirmar" pode ter sido enviado antes da gravação.
+// recuperar roda ao ligar. Transação sem decisão gravada vira "cancelar":
+// ninguém pode ter recebido "confirmar" antes da decisão ser gravada.
 func recuperar() {
 	trava.Lock()
 	defer trava.Unlock()
@@ -69,7 +68,7 @@ func recuperar() {
 		}
 	}
 	if pendentes > 0 {
-		log.Printf("[recuperacao] %d assento(s) provisorio(s); o vigia vai perguntar aos coordenadores", pendentes)
+		log.Printf("[recuperacao] %d assento(s) provisorio(s); vou perguntar aos coordenadores", pendentes)
 	}
 	salvar()
 }
@@ -80,68 +79,35 @@ func vigiarProvisorios() {
 	}
 }
 
-// vigiarUmaVez resolve os provisórios vencidos. Quem votou "sim" NUNCA libera
-// sozinho por prazo: o coordenador pode ter confirmado nas outras empresas.
-// Primeiro pergunta ao coordenador; se ele não responde, pergunta às outras
-// participantes (terminação cooperativa); se ninguém sabe, continua segurando.
+// vigiarUmaVez: assento provisório antigo -> pergunta ao coordenador.
+// Sem resposta, segura e pergunta de novo depois. Quem votou "sim" nunca
+// libera sozinho: o coordenador pode ter confirmado nas outras empresas.
 func vigiarUmaVez() {
-	type pendente struct {
-		tx, coordenador string
-		participantes   []string
-	}
+	type pendente struct{ tx, coordenador string }
 	var lista []pendente
 	trava.Lock()
 	for _, p := range estado.Participacoes {
 		if p.Estado == provisorio && time.Since(p.Desde) > prazoProvisorio {
-			lista = append(lista, pendente{p.Transacao, p.Coordenador, p.Participantes})
+			lista = append(lista, pendente{p.Transacao, p.Coordenador})
 		}
 	}
 	trava.Unlock()
 
-	// As perguntas são feitas fora da trava.
+	// Pergunta fora da trava, para não travar a empresa esperando a rede.
 	for _, p := range lista {
 		decisao, err := perguntarDecisao(p.coordenador, p.tx)
-		if err != nil {
-			decisao = perguntarParticipantes(p.tx, p.participantes)
-			if decisao != "" {
-				log.Printf("[dono] %s: coordenador %s fora do ar; outra participante sabia -> %s", p.tx, p.coordenador, decisao)
-			}
-		}
-		switch decisao {
-		case confirmar:
+		switch {
+		case err != nil:
+			log.Printf("[dono] %s: coordenador %s nao respondeu; continuo segurando", p.tx, p.coordenador)
+		case decisao == confirmar:
 			confirmarParticipacao(p.tx)
-		case "":
-			log.Printf("[dono] %s: coordenador %s fora do ar e ninguem sabe a decisao; continuo segurando", p.tx, p.coordenador)
 		default:
-			cancelarParticipacao(p.tx, "decisao: "+decisao)
+			cancelarParticipacao(p.tx, "coordenador respondeu "+decisao)
 		}
 	}
 }
 
-// perguntarParticipantes devolve "confirmar", "cancelar" ou "" (ninguém sabe).
-//   - alguma confirmou          -> o coordenador decidiu confirmar
-//   - alguma cancelou ou recusou -> o coordenador não pode ter confirmado
-//   - todas provisórias/fora    -> só o coordenador sabe; esperar ele voltar
-func perguntarParticipantes(tx string, participantes []string) string {
-	for _, empresa := range participantes {
-		if empresa == estado.Empresa {
-			continue
-		}
-		s, err := perguntarSituacao(empresa, tx)
-		if err != nil {
-			continue
-		}
-		switch s {
-		case confirmado:
-			return confirmar
-		case cancelado, recusado:
-			return cancelar
-		}
-	}
-	return ""
-}
-
-// reenviarDecisoes reenvia decisões que alguma parte ainda não recebeu.
+// reenviarDecisoes manda de novo a decisão para quem ainda não recebeu.
 func reenviarDecisoes() {
 	for range time.Tick(intervaloVigia) {
 		var lista []*Transacao

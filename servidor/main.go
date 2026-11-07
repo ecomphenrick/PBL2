@@ -1,7 +1,6 @@
 package main
 
-// Servidor de uma empresa. A configuração vem de variáveis de ambiente, para
-// a mesma imagem Docker servir a qualquer empresa e máquina:
+// Servidor de uma empresa. Configurado por variáveis de ambiente:
 //
 //   EMPRESA          letra da empresa (A, B, C...)              padrão: A
 //   PORTA_API        porta HTTP da API REST entre servidores     padrão: 8080

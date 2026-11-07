@@ -1,7 +1,7 @@
 package main
 
-// Atendimento TCP dos clientes motorista/passageiro desta empresa (protocolo
-// do Problema 1). O cliente nunca fala com outra empresa.
+// Atende os clientes (motorista e passageiro) desta empresa por TCP.
+// O cliente nunca fala com outra empresa.
 
 import (
 	"bufio"

@@ -1,8 +1,8 @@
 package main
 
-// Chamadas às outras empresas. Toda chamada tem timeout: sem resposta, a
-// empresa é tratada como fora do ar naquele pedido e o resto segue normal.
-// Quando o destino é a própria empresa, a função local é chamada direto.
+// Chamadas para as outras empresas. Toda chamada tem timeout: sem resposta,
+// a empresa é tratada como fora do ar e o resto continua funcionando.
+// Se o destino é a própria empresa, chama a função local direto.
 
 import (
 	"bytes"
@@ -20,7 +20,7 @@ var (
 	pares       = map[string]string{} // ex.: "B" -> "http://empresa-b:8080"
 )
 
-// chamar devolve o código HTTP; corpo e resposta podem ser nil.
+// chamar faz o pedido HTTP e devolve o código da resposta.
 func chamar(empresa, metodo, caminho string, corpo, resposta any) (int, error) {
 	base, conhecida := pares[empresa]
 	if !conhecida {
@@ -56,14 +56,9 @@ func chamar(empresa, metodo, caminho string, corpo, resposta any) (int, error) {
 }
 
 type PedidoPreparar struct {
-	Coordenador   string           `json:"coordenador"`
-	Passageiro    string           `json:"passageiro"`
-	Itens         []protocolo.Item `json:"itens"`
-	Participantes []string         `json:"participantes"`
-}
-
-type RespostaSituacao struct {
-	Situacao string `json:"situacao"`
+	Coordenador string           `json:"coordenador"`
+	Passageiro  string           `json:"passageiro"`
+	Itens       []protocolo.Item `json:"itens"`
 }
 
 type RespostaVoto struct {
@@ -76,19 +71,19 @@ type RespostaDecisao struct {
 }
 
 // pedirPreparar: sem resposta conta como "não".
-func pedirPreparar(empresa, tx, passageiro string, itens []protocolo.Item, participantes []string) (bool, string) {
+func pedirPreparar(empresa, tx, passageiro string, itens []protocolo.Item) (bool, string) {
 	if empresa == estado.Empresa {
-		return preparar(tx, estado.Empresa, passageiro, itens, participantes)
+		return preparar(tx, estado.Empresa, passageiro, itens)
 	}
 	var v RespostaVoto
-	corpo := PedidoPreparar{Coordenador: estado.Empresa, Passageiro: passageiro, Itens: itens, Participantes: participantes}
+	corpo := PedidoPreparar{Coordenador: estado.Empresa, Passageiro: passageiro, Itens: itens}
 	if _, err := chamar(empresa, "POST", "/transacoes/"+tx+"/preparar", corpo, &v); err != nil {
 		return false, "empresa " + empresa + " sem resposta"
 	}
 	return v.Voto == "sim", v.Motivo
 }
 
-// enviarDecisao devolve false quando vale tentar de novo mais tarde.
+// enviarDecisao devolve false quando precisa tentar de novo depois.
 func enviarDecisao(empresa, tx, decisao string) bool {
 	if empresa == estado.Empresa {
 		var err error
@@ -106,6 +101,7 @@ func enviarDecisao(empresa, tx, decisao string) bool {
 	return codigo == http.StatusOK || codigo == http.StatusConflict
 }
 
+// perguntarDecisao: o dono pergunta ao coordenador o que foi decidido.
 func perguntarDecisao(coordenador, tx string) (string, error) {
 	if coordenador == estado.Empresa {
 		return consultarDecisao(tx), nil
@@ -115,13 +111,4 @@ func perguntarDecisao(coordenador, tx string) (string, error) {
 		return "", err
 	}
 	return d.Decisao, nil
-}
-
-// perguntarSituacao pergunta a outra participante o que ela sabe da transação.
-func perguntarSituacao(empresa, tx string) (string, error) {
-	var s RespostaSituacao
-	if _, err := chamar(empresa, "GET", "/transacoes/"+tx+"/situacao", nil, &s); err != nil {
-		return "", err
-	}
-	return s.Situacao, nil
 }

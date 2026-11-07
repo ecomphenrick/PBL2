@@ -1,8 +1,8 @@
 package main
 
-// Lado do dono do trecho (participante do 2PC). A precedência é a ordem de
-// chegada na trava; sem assento livre a resposta é "não" na hora, sem fila,
-// o que evita deadlock entre empresas.
+// Lado do dono da carona (participante do 2PC).
+// Quem chega primeiro na trava leva o assento. Sem assento, responde "não"
+// na hora, sem fila: assim ninguém fica esperando o outro (sem deadlock).
 
 import (
 	"errors"
@@ -18,12 +18,12 @@ type chave struct {
 	trecho int
 }
 
-// preparar é a fase 1: separa os assentos como provisórios e responde sim/não e IDEMPOTENCIA.
-func preparar(tx, coordenador, passageiro string, itens []protocolo.Item, participantes []string) (bool, string) {
+// preparar (fase 1): separa os assentos como provisórios e responde sim ou não.
+func preparar(tx, coordenador, passageiro string, itens []protocolo.Item) (bool, string) {
 	trava.Lock()
 	defer trava.Unlock()
 
-	// Pedido repetido devolve a mesma resposta, sem separar de novo. (idempotencia)
+	// Pedido repetido: devolve a mesma resposta, sem separar de novo.
 	if p, existe := estado.Participacoes[tx]; existe {
 		if p.Estado == provisorio || p.Estado == confirmado {
 			return true, ""
@@ -35,18 +35,18 @@ func preparar(tx, coordenador, passageiro string, itens []protocolo.Item, partic
 		Transacao:   tx,
 		Coordenador: coordenador,
 		Passageiro:  passageiro,
-		Itens:         itens,
-		Desde:         time.Now(),
-		Participantes: participantes,
+		Itens:       itens,
+		Desde:       time.Now(),
 	}
 
 	if motivo := separarAssentos(itens); motivo != "" {
 		p.Estado = recusado
 		estado.Participacoes[tx] = p
-		salvar() // uma recusa não segura nada, então a falha aqui é tolerável
+		salvar()
 		return false, motivo
 	}
 
+	// Grava antes de responder "sim".
 	p.Estado = provisorio
 	estado.Participacoes[tx] = p
 	if err := salvar(); err != nil {
@@ -58,8 +58,8 @@ func preparar(tx, coordenador, passageiro string, itens []protocolo.Item, partic
 	return true, ""
 }
 
-// separarAssentos confere todos os trechos antes de descontar qualquer um.
-// Devolve "" em caso de sucesso ou o motivo da recusa. Chamar com a trava pega.
+// separarAssentos confere todos os trechos primeiro e só depois desconta.
+// Devolve "" se deu certo, ou o motivo da recusa.
 func separarAssentos(itens []protocolo.Item) string {
 	if len(itens) == 0 {
 		return "nenhum trecho pedido"
@@ -77,13 +77,14 @@ func separarAssentos(itens []protocolo.Item) string {
 			precisa[chave{it.Carona, t}]++
 		}
 	}
-	//confere se há assento livres em todos
+	// confere
 	for k, n := range precisa {
 		t := acharCarona(k.carona).Trechos[k.trecho]
 		if t.Assentos < n {
 			return fmt.Sprintf("sem assento livre em %s (%s -> %s)", k.carona, t.Origem, t.Destino)
 		}
-	} //desconta os assentos
+	}
+	// desconta
 	for k, n := range precisa {
 		acharCarona(k.carona).Trechos[k.trecho].Assentos -= n
 	}
@@ -105,6 +106,7 @@ var (
 	errJaConfirmada = errors.New("transacao ja confirmada; nao pode cancelar")
 )
 
+// confirmarParticipacao (fase 2): o provisório vira confirmado.
 func confirmarParticipacao(tx string) error {
 	trava.Lock()
 	defer trava.Unlock()
@@ -115,10 +117,9 @@ func confirmarParticipacao(tx string) error {
 	}
 	switch p.Estado {
 	case confirmado:
-		return nil
+		return nil // repetido
 	case provisorio:
 	default:
-		// Não deveria acontecer: quem votou "sim" nunca libera sozinho.
 		log.Printf("[dono] ATENCAO %s: confirmar chegou mas a participacao esta %s", tx, p.Estado)
 		return errJaLiberada
 	}
@@ -131,7 +132,7 @@ func confirmarParticipacao(tx string) error {
 		}
 	}
 	if err := salvar(); err != nil {
-		// Volta ao provisório; o coordenador reenvia o confirmar depois.
+		// Não gravou: desfaz. O coordenador manda de novo depois.
 		p.Estado = provisorio
 		for _, it := range p.Itens {
 			c := acharCarona(it.Carona)
@@ -146,20 +147,21 @@ func confirmarParticipacao(tx string) error {
 	return nil
 }
 
+// cancelarParticipacao (fase 2): devolve os assentos.
 func cancelarParticipacao(tx, motivo string) error {
 	trava.Lock()
 	defer trava.Unlock()
 
 	p, existe := estado.Participacoes[tx]
 	if !existe {
-		// O cancelar pode chegar antes do preparar. Fica registrado para que
-		// um preparar atrasado seja recusado.
+		// O "cancelar" chegou antes do "preparar". Anota, para recusar o
+		// "preparar" quando ele chegar.
 		estado.Participacoes[tx] = &Participacao{Transacao: tx, Estado: cancelado, Desde: time.Now()}
 		return salvar()
 	}
 	switch p.Estado {
 	case cancelado, recusado:
-		return nil
+		return nil // repetido
 	case confirmado:
 		return errJaConfirmada
 	}
@@ -173,23 +175,4 @@ func cancelarParticipacao(tx, motivo string) error {
 	}
 	log.Printf("[dono] %s: CANCELADO (%s), assentos devolvidos", tx, motivo)
 	return nil
-}
-
-// situacao responde a outra participante que perdeu contato com o coordenador
-// (terminação cooperativa). Quem nunca recebeu o preparar anota "cancelado":
-// assim o preparar atrasado é recusado e o coordenador não consegue confirmar.
-func situacao(tx string) string {
-	trava.Lock()
-	defer trava.Unlock()
-
-	if p, existe := estado.Participacoes[tx]; existe {
-		return p.Estado
-	}
-	estado.Participacoes[tx] = &Participacao{Transacao: tx, Estado: cancelado, Desde: time.Now()}
-	if err := salvar(); err != nil {
-		delete(estado.Participacoes, tx)
-		return "desconhecida"
-	}
-	log.Printf("[dono] %s: perguntaram por uma transacao que nunca chegou aqui -> anoto CANCELADO", tx)
-	return cancelado
 }

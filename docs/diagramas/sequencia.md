@@ -69,8 +69,6 @@ sequenceDiagram
     A->>A: grava decisão "confirmar"
     Note over A: CAI aqui (ninguém foi avisado)
     Note over B,C: 30 s depois: perguntam GET /decisao → sem resposta (timeout 3 s)
-    B->>C: GET /situacao → provisorio (C também não sabe)
-    C->>B: GET /situacao → provisorio
     Note over B,C: votaram "sim": NÃO liberam sozinhas<br/>continuam segurando e perguntam de novo a cada 5 s
     Note over A: volta: carrega o arquivo, vê "confirmar" não avisado
     A->>B: confirmar (reenvio)
@@ -92,24 +90,4 @@ sequenceDiagram
     B->>A: GET /transacoes/A-T9/decisao
     A-->>B: cancelar
     B->>B: devolve o assento
-```
-
-## 5. Coordenador cai no meio do anúncio (terminação cooperativa)
-
-```mermaid
-sequenceDiagram
-    participant A as Empresa A (coordenador)
-    participant B as Empresa B
-    participant C as Empresa C
-
-    A->>B: preparar → sim (provisório)
-    A->>C: preparar → sim (provisório)
-    A->>A: grava decisão "confirmar"
-    A->>C: confirmar
-    Note over A: CAI antes de avisar B
-    Note over B: 30 s: GET /decisao para A → sem resposta (timeout 3 s)
-    B->>C: GET /transacoes/A-T9/situacao
-    C-->>B: confirmado
-    B->>B: confirma (A tinha decidido confirmar)
-    Note over A,C: itinerário inteiro confirmado, mesmo com A fora do ar
 ```

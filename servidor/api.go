@@ -8,7 +8,6 @@ package main
 //   POST /transacoes/{id}/confirmar   fase 2          -> 200 | 409
 //   POST /transacoes/{id}/cancelar    fase 2          -> 200 | 409
 //   GET  /transacoes/{id}/decisao     dono pergunta ao coordenador
-//   GET  /transacoes/{id}/situacao    dono pergunta a outra participante
 //   GET  /estado                      usado pelo verificador de invariantes
 //   POST /simular-falha?ponto=...     demonstração de queda
 
@@ -26,9 +25,6 @@ func registrarRotas() {
 	http.HandleFunc("POST /transacoes/{id}/confirmar", rotaConfirmar)
 	http.HandleFunc("POST /transacoes/{id}/cancelar", rotaCancelar)
 	http.HandleFunc("GET /transacoes/{id}/decisao", rotaDecisao)
-	http.HandleFunc("GET /transacoes/{id}/situacao", func(w http.ResponseWriter, r *http.Request) {
-		responderJSON(w, http.StatusOK, RespostaSituacao{Situacao: situacao(r.PathValue("id"))})
-	})
 	http.HandleFunc("GET /estado", rotaEstado)
 	http.HandleFunc("POST /simular-falha", rotaSimularFalha)
 }
@@ -62,7 +58,7 @@ func rotaPreparar(w http.ResponseWriter, r *http.Request) {
 		erroJSON(w, http.StatusBadRequest, "corpo invalido")
 		return
 	}
-	sim, motivo := preparar(r.PathValue("id"), p.Coordenador, p.Passageiro, p.Itens, p.Participantes)
+	sim, motivo := preparar(r.PathValue("id"), p.Coordenador, p.Passageiro, p.Itens)
 	if sim {
 		responderJSON(w, http.StatusOK, RespostaVoto{Voto: "sim"})
 	} else {

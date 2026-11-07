@@ -1,7 +1,6 @@
 package main
 
-// Dados da empresa e persistência em disco. Cada empresa guarda apenas as
-// próprias caronas; nada aqui é cópia de outra empresa.
+// Dados da empresa e gravação em disco. Cada empresa guarda só as suas caronas.
 
 import (
 	"encoding/json"
@@ -38,16 +37,14 @@ const (
 	recusado   = "recusado"
 )
 
-// Participacao é o registro do dono para cada transação que pediu assento a ele.
+// Participacao: o que o dono anota sobre cada pedido de assento.
 type Participacao struct {
 	Transacao   string           `json:"transacao"`
 	Coordenador string           `json:"coordenador"`
 	Passageiro  string           `json:"passageiro"`
 	Itens       []protocolo.Item `json:"itens"`
 	Estado      string           `json:"estado"`
-	Desde       time.Time        `json:"desde"` // relógio local, usado só para medir o prazo
-	// Todas as empresas da transação, para perguntar a elas se o coordenador sumir.
-	Participantes []string `json:"participantes,omitempty"`
+	Desde       time.Time        `json:"desde"` // relógio local, só para medir o prazo
 }
 
 // Estados de uma transação (lado do coordenador).
@@ -65,7 +62,7 @@ type Parte struct {
 	Avisada bool             `json:"avisada"` // já recebeu a decisão final
 }
 
-// Transacao é o registro do coordenador; serve também como a reserva do passageiro.
+// Transacao: o que o coordenador anota sobre cada reserva.
 type Transacao struct {
 	ID         string    `json:"id"` // ex.: "A-T7"
 	Passageiro string    `json:"passageiro"`
@@ -93,12 +90,12 @@ type Estado struct {
 
 var (
 	estado  Estado
-	trava   sync.Mutex // protege todo o estado; nunca fica presa durante chamada de rede
+	trava   sync.Mutex // protege o estado; nunca fica pega esperando a rede
 	arquivo string
 )
 
-// salvar deve ser chamada com a trava pega. Grava num arquivo temporário e
-// depois renomeia, para uma queda no meio da escrita não corromper o arquivo.
+// salvar grava o estado (chamar com a trava pega). Escreve num arquivo
+// temporário e depois renomeia: se cair no meio, o arquivo antigo fica inteiro.
 func salvar() error {
 	dados, err := json.MarshalIndent(estado, "", "  ")
 	if err != nil {
@@ -134,8 +131,7 @@ func empresaDa(idCarona string) string {
 	return empresa
 }
 
-// copiar duplica também os trechos, para a cópia poder ser lida fora da trava
-// sem disputar memória com uma reserva em andamento.
+// copiar faz uma cópia completa da carona, para ler fora da trava com segurança.
 func copiar(c Carona) Carona {
 	copia := c
 	copia.Trechos = make([]Trecho, len(c.Trechos))
@@ -146,7 +142,7 @@ func copiar(c Carona) Carona {
 	return copia
 }
 
-// acharCarona devolve ponteiro para poder alterar a carona. Chamar com a trava pega.
+// acharCarona devolve a carona para poder alterá-la (chamar com a trava pega).
 func acharCarona(id string) *Carona {
 	for i := range estado.Caronas {
 		if estado.Caronas[i].ID == id {

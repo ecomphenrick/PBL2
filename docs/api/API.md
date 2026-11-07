@@ -23,7 +23,6 @@ por TCP (ver `protocolo/`).
 | POST | `/transacoes/{id}/confirmar` | coordenador | fase 2: confirmar |
 | POST | `/transacoes/{id}/cancelar` | coordenador | fase 2: cancelar e devolver |
 | GET | `/transacoes/{id}/decisao` | dono do trecho | qual foi a decisão do coordenador? |
-| GET | `/transacoes/{id}/situacao` | dono do trecho | o que outra participante sabe da transação? (coordenador fora do ar) |
 | GET | `/estado` | teste/verificador | estado completo desta empresa |
 | POST | `/simular-falha?ponto=...` | demonstração | derruba esta empresa num ponto do 2PC |
 
@@ -57,12 +56,9 @@ empresas ao mesmo tempo e junta o resultado.
 {
   "coordenador": "A",
   "passageiro": "ana",
-  "itens": [{"carona": "B-1", "de": 0, "ate": 1}],
-  "participantes": ["A", "B", "C"]
+  "itens": [{"carona": "B-1", "de": 0, "ate": 1}]
 }
 ```
-`participantes` lista todas as empresas da transação. A participação guarda essa lista
-para poder perguntar às outras se o coordenador sumir.
 Cada item pede os trechos `de` até `ate-1` de uma carona. A empresa confere **todos** os
 itens dentro da trava dela. Se houver assento em todos, desconta e grava a participação
 como **provisória** antes de responder. Senão, responde "não" na hora, sem fila.
@@ -109,15 +105,7 @@ vai ao **coordenador**.
 - A transação ainda está esperando votos: o coordenador **decide `cancelar` na hora**,
   grava e responde. Assim o dono nunca libera um assento que depois seria confirmado.
 
-### GET /transacoes/{id}/situacao
-
-Terminação cooperativa. Quem chama é um **dono** com assento provisório cujo
-coordenador não respondeu. A pergunta vai a outra **participante** da mesma transação.
-
-**200** `{"situacao": "provisorio" | "confirmado" | "cancelado" | "recusado"}`
-
-| Resposta | O que o dono que perguntou faz |
-|---|---|
+---|---|
 | `confirmado` | confirma: o coordenador decidiu confirmar |
 | `cancelado` ou `recusado` | cancela: com um "não" (ou um cancelar), o coordenador não pode ter confirmado |
 | `provisorio` | nada: só o coordenador sabe; continua segurando e pergunta de novo |
@@ -152,8 +140,7 @@ processo:
 | A mesma requisição é repetida | mesmo efeito de uma vez só (idempotência pelo ID da transação) |
 | O coordenador cai antes de decidir | ao voltar, decide "cancelar" e avisa todas |
 | O coordenador cai depois de decidir | ao voltar, reenvia a decisão gravada |
-| O coordenador não responde | o dono pergunta às outras participantes (`/situacao`); se alguma sabe, segue ela |
-| O coordenador some e ninguém sabe | quem votou "sim" **não libera sozinho**: segura e pergunta de 5 em 5 s até alguém saber |
+| O coordenador não responde | quem votou "sim" **não libera sozinho**: segura e pergunta de novo a cada 5 s até ele voltar |
 | Um dono cai com assento provisório | ao voltar, pergunta a decisão ao coordenador e aplica |
 
 Diagrama de sequência: [`docs/diagramas/sequencia.md`](../diagramas/sequencia.md).

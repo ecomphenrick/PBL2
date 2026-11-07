@@ -1,8 +1,7 @@
 package main
 
-// Busca distribuída por consulta em tempo real: a cada busca todas as empresas
-// são consultadas, sem guardar cópia. Empresa fora do ar é pulada e informada
-// ao passageiro.
+// Busca: pergunta a todas as empresas na hora (sem guardar cópia).
+// Empresa fora do ar é pulada e o passageiro é avisado.
 
 import (
 	"fmt"
@@ -66,9 +65,8 @@ const (
 	maxOpcoes  = 15
 )
 
-// combinar monta os itinerários num grafo: cidade = vértice, pedaço de carona
-// com assento livre = aresta. Busca em profundidade a partir da origem, sem
-// repetir cidade nem carona, até maxCaronas caronas.
+// combinar monta as viagens num grafo: cidade = ponto, trecho com assento = ligação.
+// Anda a partir da origem, sem repetir cidade nem carona, até maxCaronas caronas.
 func combinar(caronas []Carona, origem, destino string) []protocolo.Opcao {
 	var (
 		opcoes    []protocolo.Opcao
